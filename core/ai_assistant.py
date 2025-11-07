@@ -6,261 +6,230 @@ import os
 import json
 import tkinter as tk
 from tkinter import messagebox, simpledialog
-from tkinter import ttk
 import threading
-
-try:
-    import openai
-    OPENAI_AVAILABLE = True
-except ImportError:
-    OPENAI_AVAILABLE = False
+from typing import Optional, List, Tuple
 
 class AIAssistant:
     """AI Assistant for file analysis and general questions"""
     
     def __init__(self):
+        self.config_file = ".arangr_ai_config.json"
         self.api_key = None
         self.client = None
-        self.config_file = os.path.join(os.path.expanduser("~"), ".arangr_ai_config.json")
-        self._load_api_key()
+        self.is_configured = False
+        self._load_config()
     
-    def _load_api_key(self):
-        """Load API key from encrypted config file"""
+    def _load_config(self):
+        """Load AI configuration from file"""
         try:
             if os.path.exists(self.config_file):
                 with open(self.config_file, 'r') as f:
                     config = json.load(f)
-                    self.api_key = self._decrypt_key(config.get('api_key', ''))
-                    if self.api_key and OPENAI_AVAILABLE:
-                        self.client = openai.OpenAI(api_key=self.api_key)
+                    self.api_key = config.get('api_key')
+                    if self.api_key:
+                        self._initialize_client()
         except Exception as e:
-            print(f"Error loading API key: {e}")
+            print(f"Error loading AI config: {e}")
     
-    def _save_api_key(self, api_key):
-        """Save API key to encrypted config file"""
+    def _save_config(self):
+        """Save AI configuration to file"""
         try:
-            config = {'api_key': self._encrypt_key(api_key)}
+            config = {
+                'api_key': self.api_key,
+                'model': 'gpt-3.5-turbo',
+                'max_tokens': 1000,
+                'temperature': 0.7
+            }
             with open(self.config_file, 'w') as f:
-                json.dump(config, f)
-            self.api_key = api_key
-            if OPENAI_AVAILABLE:
-                self.client = openai.OpenAI(api_key=api_key)
-            return True
+                json.dump(config, f, indent=2)
         except Exception as e:
-            print(f"Error saving API key: {e}")
+            print(f"Error saving AI config: {e}")
+    
+    def _initialize_client(self):
+        """Initialize OpenAI client"""
+        try:
+            import openai
+            self.client = openai.OpenAI(api_key=self.api_key)
+            self.is_configured = True
+            return True
+        except ImportError:
+            messagebox.showerror("Error", 
+                               "OpenAI package not installed.\n\n"
+                               "Please install it using:\n"
+                               "pip install openai")
+            return False
+        except Exception as e:
+            print(f"Error initializing OpenAI client: {e}")
             return False
     
-    def _encrypt_key(self, key):
-        """Simple encryption for API key storage"""
-        # Basic encoding - in production, use proper encryption
-        import base64
-        return base64.b64encode(key.encode()).decode()
-    
-    def _decrypt_key(self, encrypted_key):
-        """Simple decryption for API key retrieval"""
-        try:
-            import base64
-            return base64.b64decode(encrypted_key.encode()).decode()
-        except:
-            return ""
-    
-    def setup_api_key(self, parent=None):
-        """Setup or update OpenAI API key"""
-        if not OPENAI_AVAILABLE:
-            messagebox.showerror(
-                "AI Assistant", 
-                "OpenAI library not installed.\n\nInstall with: pip install openai"
-            )
-            return False
+    def setup_api_key(self, parent_window=None):
+        """Prompt user to enter OpenAI API key"""
+        dialog_title = "Setup OpenAI API Key"
+        dialog_message = ("Enter your OpenAI API Key:\n\n"
+                         "1. Go to https://platform.openai.com/api-keys\n"
+                         "2. Create an account or sign in\n"
+                         "3. Generate a new API key\n"
+                         "4. Copy and paste it below\n\n"
+                         "Your key will be saved securely in .arangr_ai_config.json")
         
-        # Create setup dialog
-        dialog = tk.Toplevel(parent)
-        dialog.title("AI Assistant Setup")
-        dialog.geometry("500x300")
-        dialog.transient(parent)
-        dialog.grab_set()
-        
-        # Center the dialog
-        dialog.update_idletasks()
-        x = (dialog.winfo_screenwidth() // 2) - (500 // 2)
-        y = (dialog.winfo_screenheight() // 2) - (300 // 2)
-        dialog.geometry(f"500x300+{x}+{y}")
-        
-        # Main frame
-        main_frame = tk.Frame(dialog, padx=20, pady=20)
-        main_frame.pack(fill=tk.BOTH, expand=True)
-        
-        # Title
-        title_label = tk.Label(
-            main_frame, 
-            text="🤖 AI Assistant Setup", 
-            font=('Segoe UI', 16, 'bold')
+        # Show input dialog
+        api_key = simpledialog.askstring(
+            dialog_title,
+            dialog_message,
+            show='*',  # Hide the key for security
+            parent=parent_window
         )
-        title_label.pack(pady=(0, 20))
         
-        # Instructions
-        instructions = tk.Text(
-            main_frame, 
-            height=6, 
-            wrap=tk.WORD, 
-            font=('Segoe UI', 9),
-            relief='flat',
-            bg='#f8f9fa'
-        )
-        instructions.pack(fill=tk.X, pady=(0, 15))
-        
-        instructions.insert(tk.END, 
-            "To use the AI Assistant feature, you need an OpenAI API key:\n\n"
-            "1. Visit: https://platform.openai.com/api-keys\n"
-            "2. Create an account or sign in\n"
-            "3. Generate a new API key\n"
-            "4. Paste your API key below\n\n"
-            "Your API key will be stored securely on your local machine."
-        )
-        instructions.config(state=tk.DISABLED)
-        
-        # API Key input
-        key_label = tk.Label(main_frame, text="OpenAI API Key:", font=('Segoe UI', 10, 'bold'))
-        key_label.pack(anchor='w', pady=(10, 5))
-        
-        key_var = tk.StringVar(value=self.api_key or "")
-        key_entry = tk.Entry(
-            main_frame, 
-            textvariable=key_var, 
-            show="*", 
-            font=('Consolas', 10),
-            relief='flat',
-            borderwidth=1,
-            highlightthickness=1
-        )
-        key_entry.pack(fill=tk.X, ipady=5)
-        
-        # Buttons
-        button_frame = tk.Frame(main_frame)
-        button_frame.pack(fill=tk.X, pady=(20, 0))
-        
-        def save_key():
-            api_key = key_var.get().strip()
-            if not api_key:
-                messagebox.showerror("Error", "Please enter an API key")
-                return
-            
-            if self._save_api_key(api_key):
-                messagebox.showinfo("Success", "API key saved successfully!")
-                dialog.destroy()
+        if api_key:
+            if api_key.startswith('sk-'):
+                self.api_key = api_key
+                self._save_config()
+                
+                if self._initialize_client():
+                    messagebox.showinfo("Success", 
+                                      "OpenAI API key configured successfully!\n\n"
+                                      "AI Assistant features are now available.")
+                    return True
+                else:
+                    messagebox.showerror("Error", 
+                                       "Failed to initialize OpenAI client.\n"
+                                       "Please check your API key and try again.")
             else:
-                messagebox.showerror("Error", "Failed to save API key")
+                messagebox.showerror("Invalid API Key", 
+                                   "OpenAI API keys should start with 'sk-'\n"
+                                   "Please check your key and try again.")
         
-        def test_key():
-            api_key = key_var.get().strip()
-            if not api_key:
-                messagebox.showerror("Error", "Please enter an API key")
-                return
-            
-            # Test the API key
-            try:
-                test_client = openai.OpenAI(api_key=api_key)
-                response = test_client.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=[{"role": "user", "content": "Hello"}],
-                    max_tokens=5
-                )
-                messagebox.showinfo("Success", "API key is valid!")
-            except Exception as e:
-                messagebox.showerror("Error", f"API key test failed:\n{str(e)}")
-        
-        tk.Button(
-            button_frame, 
-            text="Test Key", 
-            command=test_key,
-            font=('Segoe UI', 9),
-            padx=20,
-            pady=5
-        ).pack(side=tk.LEFT, padx=(0, 10))
-        
-        tk.Button(
-            button_frame, 
-            text="Save", 
-            command=save_key,
-            font=('Segoe UI', 9, 'bold'),
-            padx=20,
-            pady=5
-        ).pack(side=tk.LEFT, padx=(0, 10))
-        
-        tk.Button(
-            button_frame, 
-            text="Cancel", 
-            command=dialog.destroy,
-            font=('Segoe UI', 9),
-            padx=20,
-            pady=5
-        ).pack(side=tk.RIGHT)
-        
-        return True
+        return False
     
-    def is_configured(self):
-        """Check if AI assistant is properly configured"""
-        return bool(self.api_key and self.client and OPENAI_AVAILABLE)
+    def is_ready(self):
+        """Check if AI assistant is ready to use"""
+        return self.is_configured and self.client is not None
     
-    def ask_question(self, question, file_content=None, file_name=None):
-        """Ask AI a question, optionally about a specific file"""
-        if not self.is_configured():
-            return "❌ AI Assistant not configured. Please set up your OpenAI API key first."
+    def get_document_name_suggestions(self, file_path: str, file_content: str = None) -> List[str]:
+        """Get 3 naming suggestions for a document"""
+        if not self.is_ready():
+            return []
         
         try:
-            # Prepare the prompt
-            if file_content and file_name:
-                prompt = f"""I have a file named "{file_name}" with the following content:
-
-```
-{file_content[:4000]}  # Limit content to avoid token limits
-```
-
-Question: {question}
-
-Please provide a helpful analysis or answer based on the file content."""
-            else:
-                prompt = question
+            # Prepare the content for analysis
+            if file_content is None:
+                file_content = self._extract_file_content(file_path)
             
-            # Make API call
+            if not file_content:
+                # Fallback to filename analysis
+                file_content = f"File: {os.path.basename(file_path)}"
+            
+            # Limit content size to avoid token limits
+            if len(file_content) > 3000:
+                file_content = file_content[:3000] + "..."
+            
+            # Create the prompt
+            prompt = f"""Analyze the following document content and suggest 3 clear, descriptive filenames. 
+The suggestions should be:
+1. Professional and concise
+2. Descriptive of the content
+3. Suitable for file naming (no special characters)
+4. Different from each other
+
+Document content:
+{file_content}
+
+Respond with exactly 3 filename suggestions, one per line, without file extensions.
+Example format:
+Marketing Strategy Q4 2024
+Customer Acquisition Plan
+Sales Performance Analysis"""
+
+            # Make API request
             response = self.client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
-                    {"role": "system", "content": "You are a helpful file analysis assistant. Provide clear, concise, and useful responses."},
+                    {"role": "system", "content": "You are a helpful assistant that suggests clear, professional filenames based on document content."},
                     {"role": "user", "content": prompt}
                 ],
-                max_tokens=1000,
+                max_tokens=200,
                 temperature=0.7
             )
             
-            return response.choices[0].message.content
+            # Parse response
+            suggestions_text = response.choices[0].message.content.strip()
+            suggestions = [s.strip() for s in suggestions_text.split('\n') if s.strip()]
+            
+            # Ensure we have exactly 3 suggestions
+            if len(suggestions) >= 3:
+                return suggestions[:3]
+            elif suggestions:
+                # Pad with generic suggestions if needed
+                base_name = os.path.splitext(os.path.basename(file_path))[0]
+                while len(suggestions) < 3:
+                    suggestions.append(f"{base_name}_v{len(suggestions)}")
+                return suggestions[:3]
+            else:
+                return self._get_fallback_suggestions(file_path)
+                
+        except Exception as e:
+            print(f"Error getting AI suggestions: {e}")
+            return self._get_fallback_suggestions(file_path)
+    
+    def _extract_file_content(self, file_path: str) -> str:
+        """Extract readable content from file"""
+        try:
+            file_ext = os.path.splitext(file_path)[1].lower()
+            
+            # Text files
+            if file_ext in ['.txt', '.md', '.py', '.js', '.html', '.css', '.json', '.xml']:
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    return f.read()
+            
+            # PDF files
+            elif file_ext == '.pdf':
+                try:
+                    import PyPDF2
+                    with open(file_path, 'rb') as f:
+                        reader = PyPDF2.PdfReader(f)
+                        text = ""
+                        for page in reader.pages[:3]:  # First 3 pages only
+                            text += page.extract_text()
+                        return text
+                except ImportError:
+                    pass
+            
+            # Word documents
+            elif file_ext in ['.doc', '.docx']:
+                try:
+                    import docx
+                    doc = docx.Document(file_path)
+                    text = ""
+                    for paragraph in doc.paragraphs[:10]:  # First 10 paragraphs
+                        text += paragraph.text + "\n"
+                    return text
+                except ImportError:
+                    pass
+            
+            # For other files, return filename and basic info
+            return f"Filename: {os.path.basename(file_path)}\nFile type: {file_ext}"
             
         except Exception as e:
-            return f"❌ Error communicating with AI: {str(e)}"
+            print(f"Error extracting content from {file_path}: {e}")
+            return f"Filename: {os.path.basename(file_path)}"
     
-    def analyze_file(self, file_path, file_content):
-        """Provide automatic analysis of a file"""
-        if not self.is_configured():
-            return "❌ AI Assistant not configured."
+    def _get_fallback_suggestions(self, file_path: str) -> List[str]:
+        """Generate fallback suggestions when AI is not available"""
+        base_name = os.path.splitext(os.path.basename(file_path))[0]
+        return [
+            f"{base_name}_renamed",
+            f"{base_name}_organized",
+            f"{base_name}_updated"
+        ]
+    
+    def get_name_suggestions_async(self, file_path: str, callback, file_content: str = None):
+        """Get naming suggestions asynchronously"""
+        def worker():
+            suggestions = self.get_document_name_suggestions(file_path, file_content)
+            callback(suggestions)
         
-        file_name = os.path.basename(file_path)
-        file_ext = os.path.splitext(file_path)[1].lower()
-        
-        # Prepare analysis prompt based on file type
-        if file_ext in ['.py', '.js', '.html', '.css']:
-            analysis_type = "code"
-            prompt = f"Analyze this {file_ext} code file and provide insights about its structure, purpose, and any suggestions for improvement."
-        elif file_ext in ['.txt', '.md']:
-            analysis_type = "text"
-            prompt = f"Analyze this text document and provide a summary of its content and key points."
-        elif file_ext in ['.csv', '.xlsx']:
-            analysis_type = "data"
-            prompt = f"Analyze this data file and describe its structure and what insights can be gained from it."
-        else:
-            analysis_type = "general"
-            prompt = f"Analyze this file and provide useful insights about its content and purpose."
-        
-        return self.ask_question(prompt, file_content, file_name)
+        thread = threading.Thread(target=worker, daemon=True)
+        thread.start()
 
 
 class AIDialog:

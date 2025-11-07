@@ -296,6 +296,7 @@ build/
 
 # Local development and testing
 Starting/
+Starting
 *.bat.log
 
 # Application data and user files

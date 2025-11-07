@@ -1775,3 +1775,316 @@ Use zoom controls to adjust view."""
         cleaned_name = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', cleaned_name)
         
         return cleaned_name.strip() if cleaned_name else name.strip()
+    
+    def _create_ai_assistant_frame(self):
+        """Create AI assistant frame with improved functionality"""
+        ai_frame = tk.Frame(self.left_panel, bg=self.colors['secondary_bg'])
+        ai_frame.pack(fill='x', padx=5, pady=5)
+        
+        # AI Assistant header
+        ai_label = tk.Label(ai_frame, text="🤖 AI Assistant", 
+                           font=("Segoe UI", 12, "bold"),
+                           bg=self.colors['secondary_bg'], 
+                           fg=self.colors['text'])
+        ai_label.pack(anchor='w', padx=5, pady=(5, 2))
+        
+        # Button frame
+        button_frame = tk.Frame(ai_frame, bg=self.colors['secondary_bg'])
+        button_frame.pack(fill='x', padx=5, pady=2)
+        
+        # Smart naming button
+        self.ai_name_btn = tk.Button(button_frame, 
+                                    text="📝 Smart Rename",
+                                    font=("Segoe UI", 9),
+                                    bg=self.colors['button_bg'],
+                                    fg=self.colors['button_text'],
+                                    relief='flat',
+                                    padx=8, pady=4,
+                                    command=self._smart_rename_file)
+        self.ai_name_btn.pack(side='left', padx=(0, 2))
+        
+        # Setup button (shows when not configured)
+        self.ai_setup_btn = tk.Button(button_frame,
+                                     text="⚙️ Setup API Key",
+                                     font=("Segoe UI", 9),
+                                     bg='#ff6b35',
+                                     fg='white',
+                                     relief='flat',
+                                     padx=8, pady=4,
+                                     command=self._setup_ai_assistant)
+        
+        # Status label
+        self.ai_status_label = tk.Label(ai_frame,
+                                       font=("Segoe UI", 8),
+                                       bg=self.colors['secondary_bg'],
+                                       fg=self.colors['text_secondary'])
+        self.ai_status_label.pack(anchor='w', padx=5, pady=2)
+        
+        # Update AI status
+        self._update_ai_status()
+    
+    def _update_ai_status(self):
+        """Update AI assistant status display"""
+        if self.ai_assistant.is_ready():
+            self.ai_status_label.config(text="✅ AI Assistant Ready", fg='#28a745')
+            self.ai_setup_btn.pack_forget()
+            self.ai_name_btn.config(state='normal')
+        else:
+            self.ai_status_label.config(text="⚠️ AI Assistant not configured", fg='#ffc107')
+            self.ai_setup_btn.pack(side='left', padx=2)
+            self.ai_name_btn.config(state='disabled')
+    
+    def _setup_ai_assistant(self):
+        """Setup AI assistant API key"""
+        if self.ai_assistant.setup_api_key(self.root):
+            self._update_ai_status()
+            messagebox.showinfo("Success", 
+                              "AI Assistant is now ready!\n\n"
+                              "You can now use Smart Rename to get AI-powered "
+                              "filename suggestions based on document content.")
+    
+    def _smart_rename_file(self):
+        """Use AI to suggest better names for the selected file"""
+        if not self.current_selected_file:
+            messagebox.showwarning("No File Selected", 
+                                 "Please select a file to rename.")
+            return
+        
+        if not self.ai_assistant.is_ready():
+            messagebox.showwarning("AI Not Ready", 
+                                 "Please setup your OpenAI API key first.")
+            self._setup_ai_assistant()
+            return
+        
+        # Show loading dialog
+        loading_dialog = self._create_loading_dialog("Analyzing document...", 
+                                                   "Getting AI suggestions for better filename...")
+        
+        def on_suggestions_received(suggestions):
+            # Close loading dialog
+            loading_dialog.destroy()
+            
+            if suggestions:
+                self._show_rename_suggestions(suggestions)
+            else:
+                messagebox.showerror("Error", 
+                                   "Failed to get AI suggestions.\n"
+                                   "Please check your API key and try again.")
+        
+        # Get suggestions asynchronously
+        self.ai_assistant.get_name_suggestions_async(
+            self.current_selected_file,
+            on_suggestions_received,
+            self.current_file_content
+        )
+    
+    def _create_loading_dialog(self, title, message):
+        """Create a loading dialog window"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title(title)
+        dialog.geometry("300x120")
+        dialog.resizable(False, False)
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Center the dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
+        y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
+        dialog.geometry(f"+{x}+{y}")
+        
+        # Content
+        content_frame = tk.Frame(dialog, bg=self.colors['bg'])
+        content_frame.pack(fill='both', expand=True, padx=20, pady=20)
+        
+        # Loading animation (simple dots)
+        loading_label = tk.Label(content_frame, text="🤖 AI Assistant", 
+                               font=("Segoe UI", 12, "bold"),
+                               bg=self.colors['bg'], fg=self.colors['text'])
+        loading_label.pack(pady=(0, 10))
+        
+        message_label = tk.Label(content_frame, text=message,
+                               font=("Segoe UI", 9),
+                               bg=self.colors['bg'], fg=self.colors['text'])
+        message_label.pack()
+        
+        # Animate dots
+        self._animate_loading_dots(message_label, message)
+        
+        return dialog
+    
+    def _animate_loading_dots(self, label, base_text, dots=0):
+        """Animate loading dots"""
+        if label.winfo_exists():
+            dot_text = "." * (dots % 4)
+            label.config(text=f"{base_text}{dot_text}")
+            self.root.after(500, lambda: self._animate_loading_dots(label, base_text, dots + 1))
+    
+    def _show_rename_suggestions(self, suggestions):
+        """Show AI-generated rename suggestions"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Smart Rename Suggestions")
+        dialog.geometry("500x400")
+        dialog.resizable(True, True)
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Center the dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
+        y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
+        dialog.geometry(f"+{x}+{y}")
+        
+        # Main frame
+        main_frame = tk.Frame(dialog, bg=self.colors['bg'])
+        main_frame.pack(fill='both', expand=True, padx=15, pady=15)
+        
+        # Header
+        header_frame = tk.Frame(main_frame, bg=self.colors['bg'])
+        header_frame.pack(fill='x', pady=(0, 15))
+        
+        title_label = tk.Label(header_frame, text="🤖 AI Smart Rename",
+                             font=("Segoe UI", 14, "bold"),
+                             bg=self.colors['bg'], fg=self.colors['text'])
+        title_label.pack(side='left')
+        
+        # Current file info
+        current_name = os.path.basename(self.current_selected_file)
+        current_label = tk.Label(main_frame, 
+                                text=f"Current name: {current_name}",
+                                font=("Segoe UI", 10),
+                                bg=self.colors['bg'], fg=self.colors['text_secondary'])
+        current_label.pack(anchor='w', pady=(0, 15))
+        
+        # Suggestions frame
+        suggestions_frame = tk.Frame(main_frame, bg=self.colors['bg'])
+        suggestions_frame.pack(fill='both', expand=True, pady=(0, 15))
+        
+        tk.Label(suggestions_frame, text="AI Suggestions:",
+                font=("Segoe UI", 11, "bold"),
+                bg=self.colors['bg'], fg=self.colors['text']).pack(anchor='w', pady=(0, 10))
+        
+        # Store selected suggestion
+        selected_suggestion = tk.StringVar()
+        
+        # Create suggestion radio buttons
+        for i, suggestion in enumerate(suggestions, 1):
+            suggestion_frame = tk.Frame(suggestions_frame, bg=self.colors['secondary_bg'], relief='solid', bd=1)
+            suggestion_frame.pack(fill='x', pady=2)
+            
+            radio_frame = tk.Frame(suggestion_frame, bg=self.colors['secondary_bg'])
+            radio_frame.pack(fill='x', padx=10, pady=8)
+            
+            radio = tk.Radiobutton(radio_frame, 
+                                 text=f"{i}. {suggestion}",
+                                 variable=selected_suggestion,
+                                 value=suggestion,
+                                 font=("Segoe UI", 10),
+                                 bg=self.colors['secondary_bg'],
+                                 fg=self.colors['text'],
+                                 selectcolor=self.colors['accent'],
+                                 activebackground=self.colors['secondary_bg'])
+            radio.pack(anchor='w')
+            
+            if i == 1:  # Select first suggestion by default
+                radio.select()
+        
+        # Custom name option
+        custom_frame = tk.Frame(suggestions_frame, bg=self.colors['secondary_bg'], relief='solid', bd=1)
+        custom_frame.pack(fill='x', pady=2)
+        
+        custom_radio_frame = tk.Frame(custom_frame, bg=self.colors['secondary_bg'])
+        custom_radio_frame.pack(fill='x', padx=10, pady=8)
+        
+        custom_radio = tk.Radiobutton(custom_radio_frame,
+                                    text="Custom name:",
+                                    variable=selected_suggestion,
+                                    value="custom",
+                                    font=("Segoe UI", 10),
+                                    bg=self.colors['secondary_bg'],
+                                    fg=self.colors['text'],
+                                    selectcolor=self.colors['accent'],
+                                    activebackground=self.colors['secondary_bg'])
+        custom_radio.pack(anchor='w')
+        
+        custom_entry = tk.Entry(custom_radio_frame,
+                              font=("Segoe UI", 10),
+                              bg=self.colors['bg'],
+                              fg=self.colors['text'],
+                              relief='solid', bd=1)
+        custom_entry.pack(fill='x', pady=(5, 0))
+        
+        # Button frame
+        button_frame = tk.Frame(main_frame, bg=self.colors['bg'])
+        button_frame.pack(fill='x')
+        
+        def apply_rename():
+            new_name = selected_suggestion.get()
+            if new_name == "custom":
+                new_name = custom_entry.get().strip()
+            
+            if not new_name:
+                messagebox.showwarning("Invalid Name", "Please enter a valid filename.")
+                return
+            
+            # Apply the rename
+            if self._rename_file_with_suggestion(new_name):
+                dialog.destroy()
+        
+        def cancel_rename():
+            dialog.destroy()
+        
+        # Buttons
+        cancel_btn = tk.Button(button_frame, text="Cancel",
+                             font=("Segoe UI", 9),
+                             bg=self.colors['button_bg'],
+                             fg=self.colors['button_text'],
+                             relief='flat', padx=20, pady=6,
+                             command=cancel_rename)
+        cancel_btn.pack(side='right', padx=(5, 0))
+        
+        apply_btn = tk.Button(button_frame, text="Apply Rename",
+                            font=("Segoe UI", 9, "bold"),
+                            bg=self.colors['accent'],
+                            fg='white',
+                            relief='flat', padx=20, pady=6,
+                            command=apply_rename)
+        apply_btn.pack(side='right')
+    
+    def _rename_file_with_suggestion(self, new_name):
+        """Rename file with the suggested name"""
+        try:
+            # Get current file info
+            current_path = self.current_selected_file
+            current_dir = os.path.dirname(current_path)
+            current_ext = os.path.splitext(current_path)[1]
+            
+            # Build new path
+            if not new_name.endswith(current_ext):
+                new_name += current_ext
+            
+            new_path = os.path.join(current_dir, new_name)
+            
+            # Check if target exists
+            if os.path.exists(new_path):
+                if not messagebox.askyesno("File Exists", 
+                                         f"A file named '{new_name}' already exists.\n"
+                                         "Do you want to replace it?"):
+                    return False
+            
+            # Perform rename
+            os.rename(current_path, new_path)
+            
+            # Update UI
+            self.current_selected_file = new_path
+            self._populate_tree_async()
+            
+            # Show success message
+            messagebox.showinfo("Success", 
+                              f"File renamed successfully!\n\n"
+                              f"New name: {new_name}")
+            return True
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to rename file:\n{str(e)}")
+            return False
